@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🎮 4 in a Row</title>
+  <style>
+    body {
+      background: #0f172a;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin: 0;
+      padding: 0;
+    }
+    h1 {
+      margin: 20px;
+      font-size: 28px;
+      color: #38bdf8;
+    }
+    #status {
+      margin: 10px 0;
+      font-size: 18px;
+    }
+    #turn {
+      font-size: 20px;
+      font-weight: bold;
+      margin-bottom: 15px;
+    }
+    .board {
+      display: inline-block;
+      background: #1e293b;
+      padding: 10px;
+      border-radius: 10px;
+      box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
+    }
+    .row {
+      display: grid;
+      grid-template-columns: repeat(7, 60px);
+      margin: 4px 0;
+    }
+    .cell {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: #334155;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    .cell:hover {
+      background: #475569;
+    }
+    .cell.red {
+      background: red;
+    }
+    .cell.yellow {
+      background: gold;
+    }
+    .disabled {
+      pointer-events: none;
+      opacity: 0.4;
+    }
+    #reconnect {
+      display: none;
+      margin-top: 15px;
+      background: #22c55e;
+      border: none;
+      color: white;
+      padding: 8px 16px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <h1>🎯 4 in a Row (Real-Time)</h1>
+  <div id="status">Connecting...</div>
+  <div id="turn"></div>
+  <div id="board" class="board"></div>
+  <button id="reconnect" onclick="connect()">Reconnect</button>
+
+  <script>
+    const WS_URL = "ws://localhost:8080/ws";
+    let ws, username, myColor = null, currentTurn = null, grid = [];
+    let reconnectTimer;
+
+    function connect() {
+      username = localStorage.getItem("username");
+      if (!username) {
+        username = prompt("Enter your username:") || "Guest" + Date.now();
+        localStorage.setItem("username", username);
+      }
+
+      ws = new WebSocket(`${WS_URL}?username=${username}`);
+
+      ws.onopen = () => {
+        console.log("✅ Connected as", username);
+        clearTimeout(reconnectTimer);
+        ws.send(JSON.stringify({ type: "join", username }));
+        document.getElementById("status").innerText = "Connected as " + username;
+      };
+
+      ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        console.log("📩", msg);
+
+        if (msg.type === "status") {
+          document.getElementById("status").innerText = msg.message;
+        } 
+        else if (msg.type === "grid") {
+          grid = msg.grid;
+          renderGrid(grid);
+        } 
+        else if (msg.type === "turn") {
+          currentTurn = msg.turn;
+          myColor = msg.color;
+          updateTurnDisplay();
+        } 
+        else if (msg.type === "result") {
+          document.getElementById("status").innerText = msg.result;
+          document.getElementById("turn").innerText = "🏁 Game Over";
+          document.getElementById("board").classList.add("disabled");
+          alert("🎉 " + msg.result);
+        }
+      };
+
+      ws.onclose = () => {
+        console.warn("⚠️ Disconnected. Attempting reconnect...");
+        document.getElementById("status").innerText = "Reconnecting...";
+        document.getElementById("reconnect").style.display = "block";
+        reconnectTimer = setTimeout(connect, 3000);
+      };
+
+      ws.onerror = (err) => {
+        console.error("WebSocket error:", err);
+      };
+    }
+
+    // 🧱 Render 7×6 grid
+    function renderGrid(grid) {
+      const board = document.getElementById("board");
+      board.innerHTML = "";
+      grid.forEach((row, r) => {
+        const divRow = document.createElement("div");
+        divRow.className = "row";
+        row.forEach((cell, c) => {
+          const cellDiv = document.createElement("div");
+          cellDiv.className = "cell " + (cell === 1 ? "red" : cell === 2 ? "yellow" : "");
+          cellDiv.onclick = () => handleMove(c);
+          divRow.appendChild(cellDiv);
+        });
+        board.appendChild(divRow);
+      });
+      updateTurnDisplay();
+    }
+
+    // 🕹 Send player move
+    function handleMove(col) {
+      if (currentTurn !== myColor) return; // block if not your turn
+      ws.send(JSON.stringify({ type: "drop", column: col }));
+    }
+
+    // 🧭 Show whose turn it is
+    function updateTurnDisplay() {
+      const turnDiv = document.getElementById("turn");
+      if (!myColor) {
+        turnDiv.innerText = "";
+        return;
+      }
+      if (currentTurn === myColor) {
+        turnDiv.innerText = "🟢 Your Turn (" + (myColor === "red" ? "Red" : "Yellow") + ")";
+        document.getElementById("board").classList.remove("disabled");
+      } else {
+        turnDiv.innerText = "⏳ Opponent’s Turn";
+        document.getElementById("board").classList.add("disabled");
+      }
+    }
+
+    window.onload = connect;
+  </script>
+</body>
+</html>
